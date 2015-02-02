@@ -6,6 +6,7 @@ require 'yaml'
 load 'config/deploy.rb'
 
 set :g5k_user, "msimonin"
+set :site, "nantes"
 set :ssh_public,  File.join(ENV["HOME"], ".ssh", "id_rsa.pub")
 
 set :tarball_url, "http://www.eu.apache.org/dist/hadoop/common/hadoop-1.2.1/hadoop-1.2.1.tar.gz"
@@ -13,13 +14,14 @@ set :tarball_destination, "/opt/hadoop"
 set :wget, "http_proxy=http://proxy:3128 https_proxy=http://proxy:3128 wget"
 set :tmp_dir, "./tmp"
 
+
 XP5K::Config.load
 
 $myxp = XP5K::XP.new(:logger => logger)
 
 $myxp.define_job({
-  :resources       => ["nodes=4, walltime=3:00:00"],
-  :site           => "lille",
+  :resources       => ["nodes=4, walltime=2:00:00"],
+  :site           => "#{site}",
   :types          => ["deploy"],
   :name           => "hadoop",
   :roles      => [
@@ -31,7 +33,7 @@ $myxp.define_job({
 
 $myxp.define_deployment({
   :environment => "wheezy-x64-nfs",
-  :site => "lille",
+  :site => "#{site}",
   :roles => %w(master slaves),
   :key => File.read("#{ssh_public}")
 })
@@ -52,6 +54,7 @@ end
 desc 'Submit jobs'
 task :submit  do
   $myxp.submit
+  $myxp.wait_for_jobs
 end
 
 desc 'Deploy with Kadeploy'
@@ -212,6 +215,13 @@ namespace :cluster do
     run "jps"
   end
 
+end
+
+desc 'Launch a benchmark, BENC variable has to be set to the bench name and parameter'
+task :benchmark, :roles => [:master] do
+  set :user, "#{g5k_user}"
+  set :hadoop_bench, ENV["BENCH"] 
+  run "#{tarball_destination}/hadoop-1.2.1/bin/hadoop jar #{tarball_destination}/hadoop-1.2.1/hadoop-examples*.jar #{hadoop_bench}"
 end
 
 desc 'Remove all'
