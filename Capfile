@@ -5,8 +5,10 @@ require 'yaml'
 
 load 'config/deploy.rb'
 
-set :g5k_user, "msimonin"
 set :site, "nantes"
+
+set :g5k_user, "msimonin"
+set :user, "root"
 set :ssh_public,  File.join(ENV["HOME"], ".ssh", "id_rsa.pub")
 
 set :tarball_url, "http://www.eu.apache.org/dist/hadoop/common/hadoop-1.2.1/hadoop-1.2.1.tar.gz"
@@ -51,6 +53,17 @@ role :hadoop do
   $myxp.job_with_name('hadoop')['assigned_nodes']
 end
 
+desc 'Automatic deployment'
+task :automatic do
+  submit
+  deploy
+  prepare::default
+  configure::default
+  cluster::format_hdfs
+  cluster::start
+end
+
+
 desc 'Submit jobs'
 task :submit  do
   $myxp.submit
@@ -68,13 +81,11 @@ namespace :prepare do
   task 'default' do
     install
     packages
-    permissions
   end
 
 
   desc 'Download tarball'
   task :install, :roles => [:hadoop] do
-    set :user, "root"
     run "mkdir -p #{tarball_destination}"
     logger.debug "Download the hadoop distribution"
     run "#{wget} #{tarball_url} -O #{tarball_destination}/hadoop.tar.gz 2>1"
@@ -85,20 +96,11 @@ namespace :prepare do
 
   desc 'Install extra pacakges'
   task :packages, :roles => [:hadoop] do
-    set :user, "root"
     run "apt-get update"
     run "apt-get install -y openjdk-7-jre openjdk-7-jdk"
   end
 
-
-  desc "Give #{g5k_user} permission to deploy hadoop"
-  task :permissions, :roles => [:hadoop] do
-    set :user, "root"
-    logger.debug "Give permissions to #{g5k_user}"
-    run "chown -R #{g5k_user}:users /opt/hadoop*"
   end
-
-end
 
 namespace :configure do
   desc 'configure nodes'
@@ -107,6 +109,7 @@ namespace :configure do
     core_site::default
     mapred_site::default
     hadoop_env
+    permissions
   end
 
   namespace :topology do
@@ -152,7 +155,6 @@ namespace :configure do
     end
     
     task :transfer, :roles => [:hadoop] do
-      set :user, "#{g5k_user}"
       upload "tmp/core-site.xml", "#{tarball_destination}/hadoop-1.2.1/conf/core-site.xml", :via => :scp
     end
   end
@@ -177,41 +179,42 @@ namespace :configure do
     end
     
     task :transfer, :roles => [:hadoop] do
-      set :user, "#{g5k_user}"
       upload "tmp/mapred-site.xml", "#{tarball_destination}/hadoop-1.2.1/conf/mapred-site.xml", :via => :scp
     end
 
   end
 
   task :hadoop_env, :roles => [:hadoop] do
-    set :user, "#{g5k_user}"
     run "perl -pi -e 's,.*JAVA_HOME.*,export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64/jre,g' #{tarball_destination}/hadoop-1.2.1/conf/hadoop-env.sh"
   end
+
+  desc "Give #{g5k_user} permission to deploy hadoop"
+    task :permissions, :roles => [:hadoop] do
+    logger.debug "Give permissions to #{g5k_user}"
+    run "chown -R #{g5k_user}:users /opt/hadoop*"
+  end
+
 end
 
 namespace :cluster do
   
   desc 'Format the cluster'
   task :format_hdfs, :roles => [:master] do
-    set :user, "#{g5k_user}"
-    run "#{tarball_destination}/hadoop-1.2.1/bin/hadoop namenode -format"
+    run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/hadoop namenode -format'"
   end
 
   desc 'Start the cluster'
   task :start, :roles => [:master] do
-    set :user, "#{g5k_user}"
-    run "#{tarball_destination}/hadoop-1.2.1/bin/start-all.sh"
+    run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/start-all.sh'"
   end
 
   desc 'Stop the cluster'
   task :stop, :roles => [:master] do
-    set :user, "#{g5k_user}"
-    run "#{tarball_destination}/hadoop-1.2.1/bin/stop-all.sh"
+    run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/stop-all.sh'"
   end
 
   desc 'Status of the cluster'
   task :status, :roles => [:hadoop] do
-    set :user, "#{g5k_user}"
     run "jps"
   end
 
@@ -219,14 +222,12 @@ end
 
 desc 'Launch a benchmark, BENC variable has to be set to the bench name and parameter'
 task :benchmark, :roles => [:master] do
-  set :user, "#{g5k_user}"
   set :hadoop_bench, ENV["BENCH"] 
-  run "#{tarball_destination}/hadoop-1.2.1/bin/hadoop jar #{tarball_destination}/hadoop-1.2.1/hadoop-examples*.jar #{hadoop_bench}"
+  run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/hadoop jar #{tarball_destination}/hadoop-1.2.1/hadoop-examples*.jar #{hadoop_bench}'"
 end
 
 desc 'Remove all'
 task :uninstall, :roles => [:hadoop] do
-  set :user, "root"
   run "rm -rf /opt/hadoop*"
 end
 
