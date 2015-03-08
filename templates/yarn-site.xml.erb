@@ -1,0 +1,17 @@
+<configuration>
+  <property>
+    <name>yarn.resourcemanager.hostname</name>
+    <value><%= @jobtracker %></value>
+    <description>resource manager node</description>
+  </property>
+  <property>
+    <name>yarn.nodemanager.aux-services</name>
+    <value>mapreduce_shuffle</value>
+    <description>shuffle implementation</description>
+  </property>
+  <property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+    <description>log aggregation</description>
+  </property>
+</configuration>

@@ -5,14 +5,19 @@ require 'yaml'
 
 load 'config/deploy.rb'
 
-set :site, "nantes"
+set :site, "rennes"
 
 set :g5k_user, "msimonin"
 set :user, "root"
 set :ssh_public,  File.join(ENV["HOME"], ".ssh", "id_rsa.pub")
 
-set :tarball_url, "http://www.eu.apache.org/dist/hadoop/common/hadoop-1.2.1/hadoop-1.2.1.tar.gz"
-set :tarball_destination, "/opt/hadoop"
+set :tarball_url, "http://www.eu.apache.org/dist/hadoop/common/hadoop-2.6.0/hadoop-2.6.0.tar.gz"
+set :tarball_destination, "/opt"
+set :hadoop_home, "/opt/hadoop"
+set :hadoop_conf, "#{hadoop_home}/etc/hadoop/"
+set :hadoop_bin, "#{hadoop_home}/bin/"
+set :hadoop_sbin, "#{hadoop_home}/sbin/"
+set :hadoop_examples_dir, "#{hadoop_home}/share/hadoop/mapreduce"
 set :wget, "http_proxy=http://proxy:3128 https_proxy=http://proxy:3128 wget"
 set :tmp_dir, "./tmp"
 
@@ -22,7 +27,7 @@ XP5K::Config.load
 $myxp = XP5K::XP.new(:logger => logger)
 
 $myxp.define_job({
-  :resources       => ["nodes=4, walltime=2:00:00"],
+  :resources       => ["nodes=4, walltime=4:00:00"],
   :site           => "#{site}",
   :types          => ["deploy"],
   :name           => "hadoop",
@@ -91,6 +96,7 @@ namespace :prepare do
     run "#{wget} #{tarball_url} -O #{tarball_destination}/hadoop.tar.gz 2>1"
     logger.debug "Untar the hadoop distribution"
     run "cd #{tarball_destination} && tar -xvzf hadoop.tar.gz"
+    run "cd #{tarball_destination} && mv hadoop-* hadoop"
   end
 
 
@@ -107,6 +113,7 @@ namespace :configure do
   task 'default' do
     topology::default
     core_site::default
+    yarn_site::default
     mapred_site::default
     hadoop_env
     permissions
@@ -129,9 +136,8 @@ namespace :configure do
     end
 
     task :transfer, :roles => [:master] do
-      set :user, "#{g5k_user}"
-      upload "tmp/master", "#{tarball_destination}/hadoop-1.2.1/conf/master", :via => :scp
-      upload "tmp/slaves", "#{tarball_destination}/hadoop-1.2.1/conf/slaves", :via => :scp
+      upload "tmp/master", "#{hadoop_conf}/master", :via => :scp
+      upload "tmp/slaves", "#{hadoop_conf}/slaves", :via => :scp
     end
 
   end
@@ -155,10 +161,34 @@ namespace :configure do
     end
     
     task :transfer, :roles => [:hadoop] do
-      upload "tmp/core-site.xml", "#{tarball_destination}/hadoop-1.2.1/conf/core-site.xml", :via => :scp
+      upload "tmp/core-site.xml", "#{hadoop_conf}/core-site.xml", :via => :scp
     end
   end
 
+
+
+  namespace :yarn_site do
+
+    desc 'configure yarn-site.xml'
+    task :default do
+      generate
+      transfer
+    end
+
+    task :generate, :roles => [:all] do
+      template = File.read("templates/yarn-site.xml.erb")
+      renderer = ERB.new(template)
+      @jobtracker= $myxp.role_with_name('master').servers.first
+      generate = renderer.result(binding)
+      core_site = File.open("tmp/yarn-site.xml", "w")
+      core_site.write(generate)
+      core_site.close
+    end
+    
+    task :transfer, :roles => [:hadoop] do
+      upload "tmp/yarn-site.xml", "#{hadoop_conf}/yarn-site.xml", :via => :scp
+    end
+  end
 
   namespace :mapred_site do
 
@@ -179,13 +209,13 @@ namespace :configure do
     end
     
     task :transfer, :roles => [:hadoop] do
-      upload "tmp/mapred-site.xml", "#{tarball_destination}/hadoop-1.2.1/conf/mapred-site.xml", :via => :scp
+      upload "tmp/mapred-site.xml", "#{hadoop_conf}/mapred-site.xml", :via => :scp
     end
 
   end
 
   task :hadoop_env, :roles => [:hadoop] do
-    run "perl -pi -e 's,.*JAVA_HOME.*,export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64/jre,g' #{tarball_destination}/hadoop-1.2.1/conf/hadoop-env.sh"
+    run "perl -pi -e 's,.*JAVA_HOME.*,export JAVA_HOME=/usr/lib/jvm/java-7-openjdk-amd64/jre,g' #{hadoop_conf}/hadoop-env.sh"
   end
 
   desc "Give #{g5k_user} permission to deploy hadoop"
@@ -200,17 +230,19 @@ namespace :cluster do
   
   desc 'Format the cluster'
   task :format_hdfs, :roles => [:master] do
-    run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/hadoop namenode -format'"
+    run "su #{g5k_user} -c '#{hadoop_bin}/hadoop namenode -format'"
   end
 
   desc 'Start the cluster'
   task :start, :roles => [:master] do
-    run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/start-all.sh'"
+    run "su #{g5k_user} -c '#{hadoop_sbin}/start-all.sh'"
+    run "su #{g5k_user} -c '#{hadoop_sbin}/mr-jobhistory-daemon.sh start historyserver'"
   end
 
   desc 'Stop the cluster'
   task :stop, :roles => [:master] do
-    run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/stop-all.sh'"
+    run "su #{g5k_user} -c '#{hadoop_sbin}/stop-all.sh'"
+    run "su #{g5k_user} -c '#{hadoop_sbin}/mr-jobhistory-daemon.sh stop historyserver'"
   end
 
   desc 'Status of the cluster'
@@ -223,7 +255,7 @@ end
 desc 'Launch a benchmark, BENC variable has to be set to the bench name and parameter'
 task :benchmark, :roles => [:master] do
   set :hadoop_bench, ENV["BENCH"] 
-  run "su #{g5k_user} -c '#{tarball_destination}/hadoop-1.2.1/bin/hadoop jar #{tarball_destination}/hadoop-1.2.1/hadoop-examples*.jar #{hadoop_bench}'"
+  run "su #{g5k_user} -c '#{hadoop_bin}/yarn jar #{hadoop_examples_dir}/hadoop-mapreduce-examples*.jar #{hadoop_bench}'"
 end
 
 desc 'Remove all'
