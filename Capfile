@@ -5,12 +5,32 @@ require 'yaml'
 
 load 'config/deploy.rb'
 
+# Specific configuration 
+# You might want to change it according to you needs
 set :site, "rennes"
-
+set :walltime, "04:00:00"
+SLAVE=3
 set :g5k_user, "msimonin"
-set :user, "root"
 set :ssh_public,  File.join(ENV["HOME"], ".ssh", "id_rsa.pub")
 
+XP5K::Config.load
+
+$myxp = XP5K::XP.new(:logger => logger)
+
+$myxp.define_job({
+  :resources       => ["nodes=#{SLAVE + 1}, walltime=#{walltime}"],
+  :site           => "#{site}",
+  :types          => ["deploy"],
+  :name           => "hadoop",
+  :roles      => [
+    XP5K::Role.new({ :name => 'master', :size => 1 }),
+    XP5K::Role.new({ :name => 'slaves', :size => SLAVE })
+  ],
+  :command        => "sleep 86400"
+})
+
+#####
+set :user, "root"
 set :tarball_url, "http://www.eu.apache.org/dist/hadoop/common/hadoop-2.6.0/hadoop-2.6.0.tar.gz"
 set :tarball_destination, "/opt"
 set :hadoop_home, "/opt/hadoop"
@@ -21,22 +41,6 @@ set :hadoop_examples_dir, "#{hadoop_home}/share/hadoop/mapreduce"
 set :wget, "http_proxy=http://proxy:3128 https_proxy=http://proxy:3128 wget"
 set :tmp_dir, "./tmp"
 
-
-XP5K::Config.load
-
-$myxp = XP5K::XP.new(:logger => logger)
-
-$myxp.define_job({
-  :resources       => ["nodes=4, walltime=4:00:00"],
-  :site           => "#{site}",
-  :types          => ["deploy"],
-  :name           => "hadoop",
-  :roles      => [
-    XP5K::Role.new({ :name => 'master', :size => 1 }),
-    XP5K::Role.new({ :name => 'slaves', :size => 3 })
-  ],
-  :command        => "sleep 86400"
-})
 
 $myxp.define_deployment({
   :environment => "wheezy-x64-nfs",
