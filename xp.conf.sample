@@ -1,0 +1,11 @@
+# OAR jobs defaults
+site            "rennes"
+walltime        '1:00:00'
+slave           2
+
+# Your Grid'5000 login
+user        'msimonin'
+
+# SSH configuration
+public_key      File.expand_path '~/.ssh/id_rsa.pub'
+gateway         "#{self[:user]}@access.grid5000.fr"

@@ -3,30 +3,26 @@ require 'bundler/setup'
 require 'xp5k'
 require 'yaml'
 
-load 'config/deploy.rb'
 
 # Specific configuration 
 # You might want to change it according to you needs
-set :site, "rennes"
-set :walltime, "04:00:00"
-SLAVE=3
-set :g5k_user, "msimonin"
-set :ssh_public,  File.join(ENV["HOME"], ".ssh", "id_rsa.pub")
-
+set :g5k_user, "#{XP5K::Config["user"]}"
+set :gateway, XP5K::Config[:gateway] if XP5K::Config[:gateway]
+set :ssh_public, XP5K::Config[:public_key]
 XP5K::Config.load
 
 $myxp = XP5K::XP.new(:logger => logger)
 
 $myxp.define_job({
-  :resources       => ["nodes=#{SLAVE + 1}, walltime=#{walltime}"],
-  :site           => "#{site}",
-  :types          => ["deploy"],
-  :name           => "hadoop",
-  :roles      => [
+  :resources               => ["nodes=#{XP5K::Config[:slave] + 1}, walltime=#{XP5K::Config[:walltime]}"],
+  :site                    => "#{XP5K::Config[:site]}",
+  :types                   => ["deploy"],
+  :name                    => "hadoop",
+  :roles                   => [
     XP5K::Role.new({ :name => 'master', :size => 1 }),
-    XP5K::Role.new({ :name => 'slaves', :size => SLAVE })
+    XP5K::Role.new({ :name => 'slaves', :size => XP5K::Config[:slave] })
   ],
-  :command        => "sleep 86400"
+  :command                 => "sleep 86400"
 })
 
 #####
@@ -44,9 +40,9 @@ set :tmp_dir, "./tmp"
 
 $myxp.define_deployment({
   :environment => "wheezy-x64-nfs",
-  :site => "#{site}",
-  :roles => %w(master slaves),
-  :key => File.read("#{ssh_public}")
+  :site        => "#{XP5K::Config[:site]}",
+  :roles       => %w(master slaves),
+  :key         => File.read("#{ssh_public}")
 })
 
 # Define roles

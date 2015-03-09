@@ -23,6 +23,11 @@ Hadoop deployment for Grid'5000.
 
 ### Deploy !
 
+* Create an ```xp.conf``` file from the ```xp.conf.sample```.
+* Install the required dependency ```bundle install``` (the use [```rvm```](htttp://rvm.io) is encouraged)
+* Configure [```restfully```](http://github.com/crohr/restfully)
+* Deploy
+
 ```
 cap automatic
 ```
