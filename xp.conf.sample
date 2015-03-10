@@ -1,9 +1,9 @@
-# OAR jobs defaults
+# OAR jobs
 site            "toulouse"
 walltime        '1:00:00'
 nodemanager     2
 datanode        3         
-colocated       true
+colocated       true # whether datanode, nodemanager are colocated
 
 # Your Grid'5000 login
 user        'msimonin'
