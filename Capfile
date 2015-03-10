@@ -80,7 +80,7 @@ task :automatic do
   prepare::default
   configure::default
   cluster::format_hdfs
-  cluster::start
+  cluster::start::default
 end
 
 
