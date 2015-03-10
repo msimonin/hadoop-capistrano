@@ -7,7 +7,7 @@ Hadoop deployment for Grid'5000.
 * hadoop 2.6.0 -> branch ```hadoop 2``` and ```master```
 
 
-## Default deployment
+## Deployment Model
 
 
 * One ```master``` node with
@@ -17,9 +17,12 @@ Hadoop deployment for Grid'5000.
   * JobHistoryServer
 
 * Some ```slave``` nodes with  
-  * Namenode
-  * Nodemanager
+  * Namenode * (see below)
+  * Nodemanager * (see below)
 
+> Note on namenode and nodemanager colocation
+
+The ```xp.conf``` files allows you to specify to not colocate ```namenode``` and ```datanode```. If colocation is set to ```false``` you'll get two separated clusters of nodes running either ```namenode``` or ```datanode``` processes.
 
 ### Deploy !
 
