@@ -74,25 +74,27 @@ cap uninstall             # Remove all
 
 ## Examples of Customizations
 
-The ```Capfile``` is given as a starting point. Each experiment setup will probably require to write your own. Here are some examples of possible customizations :
+> Custom ```xp.conf```
 
+The ```xp.conf``` allows some basic customizations (reservation, site, node collocation)
 
-> Custom reservation (number of nodes / walltime / site ...)
+```yaml
+# OAR jobs
+site            "toulouse"
+walltime        '1:00:00'
+nodemanager     2
+datanode        3
+colocated       true # whether datanode, nodemanager are colocated
 
-  * Check the first section of the ```Capfile```
+# Your Grid'5000 login
+user        'msimonin'
+
+# SSH configuration
+public_key      File.expand_path '~/.ssh/id_rsa.pub'
+gateway         "#{self[:user]}@access.grid5000.fr"
+```
 
 > Custom ```*-site.xml``` configuration files
 
   * Override the file in ```templates/*-site.xml```
   * Restart the cluster with : ```cap cluster:stop configure cluster:start```
-
-> Change the version of hadoop
-
-  * You can change the ```:tarball_url``` variable in the ```Capfile```
-
-> Separation between mapreduce node and datanode
-
-  * The most common deployment model for hadoop colocates compute nodes and data nodes. If you want to separate them you'll need to deploy your own hdfs on a separated set of nodes (a new role in the deployment recipe could be added).
-The deployment script to the default model but can easily be extended to support both.
-
-> ?
