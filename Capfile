@@ -2,6 +2,7 @@ require 'rubygems'
 require 'bundler/setup'
 require 'xp5k'
 require 'yaml'
+require 'colored'
 
 
 # Specific configuration 
@@ -13,15 +14,25 @@ XP5K::Config.load
 
 $myxp = XP5K::XP.new(:logger => logger)
 
+roles = []
+roles << XP5K::Role.new({ :name => 'master', :size => 1 })
+nodes = 1
+roles << XP5K::Role.new({ :name => 'nodemanager', :size => XP5K::Config[:nodemanager] })
+nodes += XP5K::Config[:nodemanager]
+
+if XP5K::Config[:colocated]
+  roles << XP5K::Role.new({ :name => 'datanode', :size => XP5K::Config[:datanode], :inner => 'nodemanager' })
+else
+  roles << XP5K::Role.new({ :name => 'datanode', :size => XP5K::Config[:datanode] })
+  nodes += XP5K::Config[:datanode]
+end
+
 $myxp.define_job({
-  :resources               => ["nodes=#{XP5K::Config[:slave] + 1}, walltime=#{XP5K::Config[:walltime]}"],
+  :resources               => ["nodes=#{nodes}, walltime=#{XP5K::Config[:walltime]}"],
   :site                    => "#{XP5K::Config[:site]}",
   :types                   => ["deploy"],
   :name                    => "hadoop",
-  :roles                   => [
-    XP5K::Role.new({ :name => 'master', :size => 1 }),
-    XP5K::Role.new({ :name => 'slaves', :size => XP5K::Config[:slave] })
-  ],
+  :roles                   => roles,
   :command                 => "sleep 86400"
 })
 
@@ -41,7 +52,7 @@ set :tmp_dir, "./tmp"
 $myxp.define_deployment({
   :environment => "wheezy-x64-nfs",
   :site        => "#{XP5K::Config[:site]}",
-  :roles       => %w(master slaves),
+  :jobs        => %w(hadoop),
   :key         => File.read("#{ssh_public}")
 })
 
@@ -50,8 +61,12 @@ role :master do
   $myxp.role_with_name('master').servers
 end
 
-role :slave do
-  $myxp.role_with_name('slaves').servers
+role :nodemanager do
+  $myxp.role_with_name('nodemanager').servers
+end
+
+role :datanode do
+  $myxp.role_with_name('datanode').servers
 end
 
 role :hadoop do
@@ -131,7 +146,7 @@ namespace :configure do
       master = $myxp.role_with_name('master').servers.first
       File.open("tmp/master", "w") {|f| f.write master }
 
-      slaves = $myxp.role_with_name('slaves').servers
+      slaves = $myxp.role_with_name('nodemanager').servers
       File.open("tmp/slaves", "w") {|f| f.write slaves.join("\n")}
     end
 
@@ -150,7 +165,7 @@ namespace :configure do
       transfer
     end
 
-    task :generate, :roles => [:all] do
+    task :generate do
       template = File.read("templates/core-site.xml.erb")
       renderer = ERB.new(template)
       @namenode = $myxp.role_with_name('master').servers.first
@@ -175,7 +190,7 @@ namespace :configure do
       transfer
     end
 
-    task :generate, :roles => [:all] do
+    task :generate do
       template = File.read("templates/yarn-site.xml.erb")
       renderer = ERB.new(template)
       @jobtracker= $myxp.role_with_name('master').servers.first
@@ -233,17 +248,60 @@ namespace :cluster do
     run "su #{g5k_user} -c '#{hadoop_bin}/hadoop namenode -format'"
   end
 
-  desc 'Start the cluster'
-  task :start, :roles => [:master] do
-    run "su #{g5k_user} -c '#{hadoop_sbin}/start-all.sh'"
-    run "su #{g5k_user} -c '#{hadoop_sbin}/mr-jobhistory-daemon.sh start historyserver'"
+  namespace :start do
+    desc 'Start the cluster'
+    task :default do
+      start_from_master
+      start_nodemanager
+      start_datanode
+    end
+
+    task :start_from_master, :roles => [:master] do
+      # start namenode
+      run "su #{g5k_user} -c '#{hadoop_sbin}/hadoop-daemon.sh --script hdfs start namenode'"
+      # run resource manager
+      run "su #{g5k_user} -c '#{hadoop_sbin}/yarn-daemon.sh start resourcemanager'"
+      # start history server
+      run "su #{g5k_user} -c '#{hadoop_sbin}/mr-jobhistory-daemon.sh start historyserver'"
+    end
+
+    task :start_nodemanager, :roles => [:nodemanager] do
+      # start all the nodemanager 
+      run "su #{g5k_user} -c '#{hadoop_sbin}/yarn-daemon.sh start nodemanager'"
+    end
+
+    task :start_datanode, :roles => [:datanode] do
+      run "su #{g5k_user} -c '#{hadoop_sbin}/hadoop-daemon.sh --script hdfs start datanode'"
+    end
   end
 
-  desc 'Stop the cluster'
-  task :stop, :roles => [:master] do
-    run "su #{g5k_user} -c '#{hadoop_sbin}/stop-all.sh'"
-    run "su #{g5k_user} -c '#{hadoop_sbin}/mr-jobhistory-daemon.sh stop historyserver'"
+  namespace :stop do
+    desc 'Stop the cluster'
+    task :default do
+      stop_from_master
+      stop_nodemanager
+      stop_datanode
+    end
+
+    task :stop_from_master, :roles => [:master] do
+      # stop namenode
+      run "su #{g5k_user} -c '#{hadoop_sbin}/hadoop-daemon.sh --script hdfs stop namenode'"
+      # run resource manager
+      run "su #{g5k_user} -c '#{hadoop_sbin}/yarn-daemon.sh stop resourcemanager'"
+      # stop history server
+      run "su #{g5k_user} -c '#{hadoop_sbin}/mr-jobhistory-daemon.sh stop historyserver'"
+    end
+
+    task :stop_nodemanager, :roles => [:nodemanager] do
+      # stop all the nodemanager 
+      run "su #{g5k_user} -c '#{hadoop_sbin}/yarn-daemon.sh stop nodemanager'"
+    end
+
+    task :stop_datanode, :roles => [:datanode] do
+      run "su #{g5k_user} -c '#{hadoop_sbin}/hadoop-daemon.sh --script hdfs stop datanode'"
+    end
   end
+
 
   desc 'Status of the cluster'
   task :status, :roles => [:hadoop] do
@@ -270,4 +328,27 @@ task :clean do
   $myxp.clean
 end
 
+desc 'Describe the cluster'
+task :describe do
+  servers = find_servers
+  servers_by_roles = {}
+  servers.each do |server|
+    role_names = role_names_for_host(server)
+    role_names.each do |role|
+      servers_by_roles[role] ||= [] 
+      servers_by_roles[role] << server
+    end
+  end 
+  puts "+----------------------------------------------------------------------+"
+  servers_by_roles.each do |role, servers|
+    print "|"+"%-30s".blue % role
+    server = servers.pop
+    puts "%-40s|" % server
+    servers.each do |server|
+      print "|"+"%-30s" % " "
+      puts "%-40s|" % server
+    end 
+    puts "+----------------------------------------------------------------------+"
+  end
+end
 

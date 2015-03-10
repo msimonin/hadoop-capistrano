@@ -1,7 +1,9 @@
 # OAR jobs defaults
-site            "rennes"
+site            "toulouse"
 walltime        '1:00:00'
-slave           2
+nodemanager     2
+datanode        3         
+colocated       true
 
 # Your Grid'5000 login
 user        'msimonin'
